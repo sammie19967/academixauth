@@ -1,3 +1,6 @@
+
+
+"use client";
 import React, { useState } from "react";
 import {
   signUpWithEmail,
@@ -5,7 +8,7 @@ import {
   setupRecaptcha,
   sendSMSCode,
   verifySMSCode,
-} from "./auth"; // adjust path as needed
+} from "../lib/authMethods"; // adjust path as needed
 
 export default function SignUp() {
   const [step, setStep] = useState("email"); // email | phone | verify
@@ -109,6 +112,12 @@ export default function SignUp() {
           <button onClick={handleVerifyCode}>Verify Code</button>
         </>
       )}
+      <div className="mt-8 text-center">
+        <p className="text-sm">
+          Already have an account?{' '}
+          <a href="/auth/users/login" className="text-blue-600 hover:underline">Login</a>
+        </p>
+      </div>
     </div>
   );
 }
