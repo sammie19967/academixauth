@@ -1,7 +1,7 @@
 "use client";
 
 import GoogleIcon from '@mui/icons-material/Google';
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { signInWithEmail, signInWithGoogle, setupRecaptcha, sendSMSCode, verifySMSCode } from "../lib/authMethods";
 
 const LoginPage = () => {
@@ -33,11 +33,16 @@ const LoginPage = () => {
     }
   };
 
+  useEffect(() => {
+    if (step === "phone") {
+      setupRecaptcha();
+    }
+  }, [step]);
+
   const handlePhoneSendCode = async () => {
     try {
       setError("");
       setMessage("");
-      setupRecaptcha();
       const result = await sendSMSCode(phoneNumber);
       setConfirmationResult(result);
       setStep("verify");
@@ -46,6 +51,7 @@ const LoginPage = () => {
       setError(err.message);
     }
   };
+
 
   const handleVerifyCode = async () => {
     try {
