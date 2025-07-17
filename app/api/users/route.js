@@ -1,0 +1,29 @@
+import dbConnect from "@/lib/dbConnect";
+import User from "@/models/User"; // We'll create this model
+import { NextResponse } from "next/server";
+
+// POST: Create or upsert user
+export async function POST(req) {
+  await dbConnect();
+  const { uid, email, displayName, phoneNumber, photoURL } = await req.json();
+  if (!uid || !email) {
+    return NextResponse.json({ error: "Missing uid or email" }, { status: 400 });
+  }
+  const user = await User.findOneAndUpdate(
+    { uid },
+    { uid, email, displayName, phoneNumber, photoURL },
+    { upsert: true, new: true, setDefaultsOnInsert: true }
+  );
+  return NextResponse.json({ user });
+}
+
+// DELETE: Delete user
+export async function DELETE(req) {
+  await dbConnect();
+  const { uid } = await req.json();
+  if (!uid) {
+    return NextResponse.json({ error: "Missing uid" }, { status: 400 });
+  }
+  await User.deleteOne({ uid });
+  return NextResponse.json({ success: true });
+}
