@@ -27,3 +27,14 @@ export async function DELETE(req) {
   await User.deleteOne({ uid });
   return NextResponse.json({ success: true });
 }
+// GET: Get user
+export async function GET(req) {
+  await dbConnect();
+  const { uid } = await req.json();
+  if (!uid) {
+    return NextResponse.json({ error: "Missing uid" }, { status: 400 });
+  }
+  const user = await User.findOne({ uid });
+  return NextResponse.json({ user });
+}
+// GET: Get all users
