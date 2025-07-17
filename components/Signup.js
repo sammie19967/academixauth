@@ -87,7 +87,7 @@ const SignUpPage = () => {
         draggable: true,
         theme: "colored",
       });
-      setTimeout(() => router.push("/login"), 2500);
+      setTimeout(() => router.push("/auth/users/login"), 2500);
     } catch (err) {
       toast.error(`⚠️ ${err.message}`, {
         position: "top-center",
