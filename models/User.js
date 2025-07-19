@@ -5,7 +5,17 @@ const UserSchema = new mongoose.Schema({
   displayName: String,
   phoneNumber: String,
   photoURL: String,
-  // Add any other fields you need here
+  // Modal fields
+  firstName: { type: String },
+  lastName: { type: String },
+  role: { type: String, enum: ["user", "admin"], default: "user" },
+  university: { type: String },
+  college: { type: String },
+  department: { type: String },
+  course: { type: String },
+  yearOfStudy: { type: String },
+  semester: { type: String },
+  unit: { type: String },
 }, { timestamps: true });
 
 export default mongoose.models.User || mongoose.model("User", UserSchema);

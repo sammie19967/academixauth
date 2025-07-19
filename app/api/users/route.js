@@ -5,13 +5,46 @@ import { NextResponse } from "next/server";
 // POST: Create or upsert user
 export async function POST(req) {
   await dbConnect();
-  const { uid, email, displayName, phoneNumber, photoURL } = await req.json();
+  const body = await req.json();
+  const {
+    uid,
+    email,
+    displayName,
+    phoneNumber,
+    photoURL,
+    firstName,
+    lastName,
+    role,
+    university,
+    college,
+    department,
+    course,
+    yearOfStudy,
+    semester,
+    unit
+  } = body;
   if (!uid || !email) {
     return NextResponse.json({ error: "Missing uid or email" }, { status: 400 });
   }
   const user = await User.findOneAndUpdate(
     { uid },
-    { uid, email, displayName, phoneNumber, photoURL },
+    {
+      uid,
+      email,
+      displayName,
+      phoneNumber,
+      photoURL,
+      firstName,
+      lastName,
+      role: role || "user",
+      university,
+      college,
+      department,
+      course,
+      yearOfStudy,
+      semester,
+      unit
+    },
     { upsert: true, new: true, setDefaultsOnInsert: true }
   );
   return NextResponse.json({ user });
