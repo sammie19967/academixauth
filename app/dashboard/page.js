@@ -2,20 +2,22 @@
 import React, { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { FiUser, FiLogOut } from "react-icons/fi";
-import { signOut, getCurrentUser } from "../../lib/authMethods";
+import { signOut, onUserStateChange } from "../../lib/authMethods";
 
 export default function DashboardPage() {
   const router = useRouter();
   const [user, setUser] = useState(null);
   
   useEffect(() => {
-    // getCurrentUser should return the user object or null
-    const fetchUser = async () => {
-      const u = await getCurrentUser();
-      if (!u) router.replace("/auth/users/login");
-      else setUser(u);
-    };
-    fetchUser();
+    // Listen for Firebase auth state changes
+    const unsubscribe = onUserStateChange((u) => {
+      if (!u) {
+        router.replace("/auth/users/login");
+      } else {
+        setUser(u);
+      }
+    });
+    return () => unsubscribe();
   }, [router]);
 
   const handleLogout = async () => {
