@@ -10,109 +10,223 @@ export default function DashboardPage() {
   const [user, setUser] = useState(null);
   const [profile, setProfile] = useState(null);
   const [showModal, setShowModal] = useState(false);
+  const [loading, setLoading] = useState(true);
 
   // Fetch full user profile from backend
   const fetchUserProfile = async (uid) => {
-    const res = await fetch(`/api/users?uid=${encodeURIComponent(uid)}`);
-    if (res.ok) {
-      const { user: userProfile } = await res.json();
-      return userProfile;
+    try {
+      const res = await fetch(`/api/users?uid=${encodeURIComponent(uid)}`);
+      if (res.ok) {
+        const { user: userProfile } = await res.json();
+        return userProfile;
+      }
+      return null;
+    } catch (error) {
+      console.error("Failed to fetch user profile:", error);
+      return null;
     }
-    return null;
+  };
+
+  // Check if user profile is incomplete
+  const isProfileIncomplete = (profile, user) => {
+    if (!profile) return true;
+    
+    // Define required fields for a complete profile
+    const requiredFields = ['firstName', 'lastName', 'university', 'college', 'department'];
+    
+    // Check if any required field is missing or empty
+    return requiredFields.some(field => !profile[field] || profile[field].trim() === '');
   };
 
   useEffect(() => {
     // Listen for Firebase auth state changes
-    const unsubscribe = onUserStateChange((u) => {
+    const unsubscribe = onUserStateChange(async (u) => {
       if (!u) {
         router.replace("/auth/users/login");
       } else {
         setUser(u);
+        setLoading(true);
+        
         // Fetch profile from backend
-        fetchUserProfile(u.uid).then(setProfile);
-      }
-    });
-    return () => unsubscribe();
-  }, [router]);
-  
-  useEffect(() => {
-    // Listen for Firebase auth state changes
-    const unsubscribe = onUserStateChange((u) => {
-      if (!u) {
-        router.replace("/auth/users/login");
-      } else {
-        setUser(u);
+        const userProfile = await fetchUserProfile(u.uid);
+        setProfile(userProfile);
+        
+        // Auto-show modal if profile is incomplete
+        if (isProfileIncomplete(userProfile, u)) {
+          setShowModal(true);
+        }
+        
+        setLoading(false);
       }
     });
     return () => unsubscribe();
   }, [router]);
 
   const handleLogout = async () => {
-    await signOut();
-    router.replace("/auth/users/login");
-  };
-
-  // Prefill with user data if available
-  const initialValues = profile && user ? {
-    ...profile,
-    firstName: profile.firstName || user.displayName?.split(' ')[0] || '',
-    lastName: profile.lastName || user.displayName?.split(' ')[1] || '',
-    email: user.email || '',
-    uid: user.uid,
-    displayName: user.displayName,
-    photoURL: user.photoURL,
-    phoneNumber: user.phoneNumber,
-  } : {};
-
-  const handleModalSubmit = async (data) => {
-    if (!user) return;
-    // Remove MongoDB fields from data before sending
-    const { _id, __v, createdAt, updatedAt, ...safeProfile } = data;
-    // Always include uid and email
-    const payload = { ...safeProfile, uid: user.uid, email: user.email, displayName: user.displayName, photoURL: user.photoURL, phoneNumber: user.phoneNumber };
-    console.log('Frontend: Submitting user profile payload:', payload);
-    const res = await fetch('/api/users', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-    });
-    if (res.ok) {
-      // Re-fetch profile after update
-      const { user: updatedProfile } = await res.json();
-      setProfile(updatedProfile);
-      setShowModal(false);
-    } else {
-      alert('Failed to update profile');
+    try {
+      await signOut();
+      router.replace("/auth/users/login");
+    } catch (error) {
+      console.error("Logout failed:", error);
     }
   };
 
+  // Prefill modal with user data if available
+  const getInitialValues = () => {
+    if (!profile || !user) return {};
+    
+    return {
+      ...profile,
+      firstName: profile.firstName || user.displayName?.split(' ')[0] || '',
+      lastName: profile.lastName || user.displayName?.split(' ')[1] || '',
+      email: user.email || profile.email || '',
+      uid: user.uid,
+      displayName: user.displayName || profile.displayName || '',
+      photoURL: user.photoURL || profile.photoURL || '',
+      phoneNumber: user.phoneNumber || profile.phoneNumber || '',
+      university: profile.university || '',
+      college: profile.college || '',
+      department: profile.department || '',
+      course: profile.course || '',
+      yearOfStudy: profile.yearOfStudy || '',
+      semester: profile.semester || '',
+      unit: profile.unit || '',
+    };
+  };
+
+  const handleModalSubmit = async (data) => {
+    if (!user) return;
+    
+    try {
+      // Remove MongoDB fields from data before sending
+      const { _id, __v, createdAt, updatedAt, ...safeProfile } = data;
+      
+      // Always include Firebase user data
+      const payload = { 
+        ...safeProfile, 
+        uid: user.uid, 
+        email: user.email || safeProfile.email,
+        displayName: user.displayName || safeProfile.displayName,
+        photoURL: user.photoURL || safeProfile.photoURL,
+        phoneNumber: user.phoneNumber || safeProfile.phoneNumber 
+      };
+      
+      console.log('Frontend: Submitting user profile payload:', payload);
+      
+      const res = await fetch('/api/users', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      
+      if (res.ok) {
+        const { user: updatedProfile } = await res.json();
+        setProfile(updatedProfile);
+        setShowModal(false);
+        
+        // Show success message
+        alert('Profile updated successfully!');
+      } else {
+        const errorData = await res.json();
+        console.error('Failed to update profile:', errorData);
+        alert(`Failed to update profile: ${errorData.error || 'Unknown error'}`);
+      }
+    } catch (error) {
+      console.error('Error updating profile:', error);
+      alert('Failed to update profile. Please try again.');
+    }
+  };
+
+  const handleModalClose = () => {
+    // Only allow closing if profile is complete
+    if (!isProfileIncomplete(profile, user)) {
+      setShowModal(false);
+    } else {
+      // Show warning for incomplete profile
+      const confirmClose = window.confirm(
+        "Your profile is incomplete. Please fill in the required fields (Name, University, College, Department) to continue."
+      );
+      if (confirmClose) {
+        setShowModal(false);
+      }
+    }
+  };
+
+  // Show loading while fetching data
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-indigo-50 to-blue-100">
+        <div className="text-indigo-600 text-lg">Loading...</div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen flex flex-col items-center justify-center bg-gradient-to-br from-indigo-50 to-blue-100">
       <div className="bg-white rounded-xl shadow-lg p-8 w-full max-w-md flex flex-col items-center">
-        <FiUser className="text-indigo-500 text-5xl mb-4" />
-        <h2 className="text-2xl font-bold mb-2">Welcome{user && user.displayName ? `, ${user.displayName}` : "!"}</h2>
-        {user && user.email && (
-          <p className="text-gray-500 mb-4">{user.email}</p>
+        {/* Profile Picture */}
+        {user?.photoURL ? (
+          <img 
+            src={user.photoURL} 
+            alt="Profile" 
+            className="w-16 h-16 rounded-full mb-4 border-2 border-indigo-200"
+          />
+        ) : (
+          <FiUser className="text-indigo-500 text-5xl mb-4" />
         )}
+        
+        {/* Welcome Message */}
+        <h2 className="text-2xl font-bold mb-2 text-center">
+          Welcome{user?.displayName ? `, ${user.displayName}` : "!"}
+        </h2>
+        
+        {/* User Info */}
+        {user?.email && (
+          <p className="text-gray-500 mb-2 text-center">{user.email}</p>
+        )}
+        {user?.phoneNumber && (
+          <p className="text-gray-500 mb-4 text-center">{user.phoneNumber}</p>
+        )}
+        
+        {/* Profile Status */}
+        {profile && (
+          <div className="mb-4 text-center">
+            {isProfileIncomplete(profile, user) ? (
+              <span className="text-orange-600 text-sm font-medium">
+                ⚠️ Profile Incomplete
+              </span>
+            ) : (
+              <span className="text-green-600 text-sm font-medium">
+                ✅ Profile Complete
+              </span>
+            )}
+          </div>
+        )}
+        
+        {/* Action Buttons */}
         <button
           onClick={() => setShowModal(true)}
-          className="mb-2 flex items-center gap-2 bg-indigo-100 hover:bg-indigo-200 text-indigo-700 px-4 py-2 rounded font-medium shadow transition"
+          className="mb-2 flex items-center gap-2 bg-indigo-100 hover:bg-indigo-200 text-indigo-700 px-4 py-2 rounded font-medium shadow transition w-full justify-center"
         >
-          Update Profile Details
+          {isProfileIncomplete(profile, user) ? 'Complete Profile' : 'Update Profile Details'}
         </button>
+        
         <button
           onClick={handleLogout}
-          className="mt-2 flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-2 rounded-md font-medium shadow transition"
+          className="mt-2 flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-2 rounded-md font-medium shadow transition w-full justify-center"
         >
           <FiLogOut /> Logout
         </button>
       </div>
+      
+      {/* Profile Modal */}
       <Modal
         open={showModal}
-        onClose={() => setShowModal(false)}
+        onClose={handleModalClose}
         onSubmit={handleModalSubmit}
-        initialValues={initialValues}
+        initialValues={getInitialValues()}
+        title={isProfileIncomplete(profile, user) ? "Complete Your Profile" : "Update Profile"}
+        subtitle={isProfileIncomplete(profile, user) ? "Please fill in your details to continue" : "Update your profile information"}
       />
     </div>
   );
