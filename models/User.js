@@ -19,6 +19,7 @@ const UserSchema = new mongoose.Schema({
   yearOfStudy: { type: String },
   semester: { type: String },
   unit: { type: String },
+  deleted: { type: Boolean, default: false },
 }, { timestamps: true });
 
 export default mongoose.models.User || mongoose.model("User", UserSchema);

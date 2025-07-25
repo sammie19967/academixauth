@@ -4,6 +4,8 @@ import User from '@/models/User';
 import { setUserRole } from '@/middleware/setUserRole';
 
 // GET /api/users?uid=xyz
+import { getAuth } from 'firebase-admin/auth';
+
 export async function GET(req) {
   await dbConnect();
   const { searchParams } = new URL(req.url);
@@ -14,7 +16,7 @@ export async function GET(req) {
   }
 
   try {
-    const user = await User.findOne({ uid });
+    const user = await User.findOne({ uid, deleted: { $ne: true } });
     if (!user) {
       console.log(`[API] User not found for UID: ${uid}`);
       return NextResponse.json({ user: null }, { status: 200 });
@@ -137,6 +139,22 @@ export async function POST(req) {
 // PUT /api/users - Alternative endpoint for updates only (no upsert)
 export async function PUT(req) {
   await dbConnect();
+  // Admin-only: verify Firebase token
+  const authHeader = req.headers.get('authorization');
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    return NextResponse.json({ error: 'Missing or invalid Authorization header' }, { status: 401 });
+  }
+  const idToken = authHeader.replace('Bearer ', '');
+  let decoded;
+  try {
+    decoded = await getAuth().verifyIdToken(idToken);
+    if (decoded.role !== 'admin') {
+      return NextResponse.json({ error: 'Forbidden: Admins only' }, { status: 403 });
+    }
+  } catch (e) {
+    return NextResponse.json({ error: 'Invalid or expired token' }, { status: 401 });
+  }
+  await dbConnect();
   
   try {
     const body = await req.json();
@@ -214,6 +232,22 @@ export async function PUT(req) {
 // DELETE /api/users?uid=xyz - For admin purposes
 export async function DELETE(req) {
   await dbConnect();
+  // Admin-only: verify Firebase token
+  const authHeader = req.headers.get('authorization');
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    return NextResponse.json({ error: 'Missing or invalid Authorization header' }, { status: 401 });
+  }
+  const idToken = authHeader.replace('Bearer ', '');
+  let decoded;
+  try {
+    decoded = await getAuth().verifyIdToken(idToken);
+    if (decoded.role !== 'admin') {
+      return NextResponse.json({ error: 'Forbidden: Admins only' }, { status: 403 });
+    }
+  } catch (e) {
+    return NextResponse.json({ error: 'Invalid or expired token' }, { status: 401 });
+  }
+
   const { searchParams } = new URL(req.url);
   const uid = searchParams.get('uid');
 
@@ -222,22 +256,23 @@ export async function DELETE(req) {
   }
 
   try {
-    const deletedUser = await User.findOneAndDelete({ uid });
-    
+    // Soft delete: set deleted: true
+    const deletedUser = await User.findOneAndUpdate(
+      { uid },
+      { $set: { deleted: true } },
+      { new: true }
+    );
     if (!deletedUser) {
       return NextResponse.json({ 
         error: 'User not found',
         success: false
       }, { status: 404 });
     }
-
-    console.log('[API] User deleted successfully:', { uid });
-    
+    console.log('[API] User soft-deleted:', { uid });
     return NextResponse.json({ 
-      message: 'User deleted successfully',
+      message: 'User soft-deleted',
       success: true
     }, { status: 200 });
-
   } catch (error) {
     console.error('DELETE /api/users error:', error);
     return NextResponse.json({ 
