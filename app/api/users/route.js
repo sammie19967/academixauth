@@ -1,73 +1,47 @@
-import dbConnect from "@/lib/dbConnect";
-import User from "@/models/User"; // We'll create this model
-import { NextResponse } from "next/server";
+import { NextResponse } from 'next/server';
+import dbConnect from '@/lib/dbConnect'; // Ensure you have this DB connector
+import User from '@/models/User';
 
-// POST: Create or upsert user
+// GET /api/users?uid=xyz
+export async function GET(req) {
+  await dbConnect();
+  const { searchParams } = new URL(req.url);
+  const uid = searchParams.get('uid');
+
+  if (!uid) {
+    return NextResponse.json({ error: 'Missing UID' }, { status: 400 });
+  }
+
+  try {
+    const user = await User.findOne({ uid });
+    if (!user) {
+      return NextResponse.json({ user: null }, { status: 200 });
+    }
+    return NextResponse.json({ user }, { status: 200 });
+  } catch (error) {
+    console.error('GET /api/users error:', error);
+    return NextResponse.json({ error: 'Server error' }, { status: 500 });
+  }
+}
+
+// POST /api/users
 export async function POST(req) {
   await dbConnect();
   const body = await req.json();
-  const {
-    uid,
-    email,
-    displayName,
-    phoneNumber,
-    photoURL,
-    firstName,
-    lastName,
-    role,
-    university,
-    college,
-    department,
-    course,
-    yearOfStudy,
-    semester,
-    unit
-  } = body;
-  if (!uid || !email) {
-    return NextResponse.json({ error: "Missing uid or email" }, { status: 400 });
-  }
-  const user = await User.findOneAndUpdate(
-    { uid },
-    {
-      uid,
-      email,
-      displayName,
-      phoneNumber,
-      photoURL,
-      firstName,
-      lastName,
-      role: role || "user",
-      university,
-      college,
-      department,
-      course,
-      yearOfStudy,
-      semester,
-      unit
-    },
-    { upsert: true, new: true, setDefaultsOnInsert: true }
-  );
-  return NextResponse.json({ user });
-}
 
-// DELETE: Delete user
-export async function DELETE(req) {
-  await dbConnect();
-  const { uid } = await req.json();
-  if (!uid) {
-    return NextResponse.json({ error: "Missing uid" }, { status: 400 });
+  if (!body.uid || !body.email) {
+    return NextResponse.json({ error: 'Missing required fields: uid and email' }, { status: 400 });
   }
-  await User.deleteOne({ uid });
-  return NextResponse.json({ success: true });
-}
-// GET: Get user
-export async function GET(req) {
-  await dbConnect();
-  const { uid } = await req.json();
-  if (!uid) {
-    return NextResponse.json({ error: "Missing uid" }, { status: 400 });
+
+  try {
+    const updatedUser = await User.findOneAndUpdate(
+      { uid: body.uid },
+      { $set: body },
+      { new: true, upsert: true, runValidators: true }
+    );
+    return NextResponse.json({ user: updatedUser }, { status: 200 });
+  } catch (error) {
+    console.error('POST /api/users error:', error);
+    return NextResponse.json({ error: 'Failed to upsert user' }, { status: 500 });
   }
-  const user = await User.findOne({ uid });
-  return NextResponse.json({ user });
 }
-// GET: Get all users

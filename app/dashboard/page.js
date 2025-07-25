@@ -8,6 +8,32 @@ import Modal from "../../components/Modal";
 export default function DashboardPage() {
   const router = useRouter();
   const [user, setUser] = useState(null);
+  const [profile, setProfile] = useState(null);
+  const [showModal, setShowModal] = useState(false);
+
+  // Fetch full user profile from backend
+  const fetchUserProfile = async (uid) => {
+    const res = await fetch(`/api/users?uid=${encodeURIComponent(uid)}`);
+    if (res.ok) {
+      const { user: userProfile } = await res.json();
+      return userProfile;
+    }
+    return null;
+  };
+
+  useEffect(() => {
+    // Listen for Firebase auth state changes
+    const unsubscribe = onUserStateChange((u) => {
+      if (!u) {
+        router.replace("/auth/users/login");
+      } else {
+        setUser(u);
+        // Fetch profile from backend
+        fetchUserProfile(u.uid).then(setProfile);
+      }
+    });
+    return () => unsubscribe();
+  }, [router]);
   
   useEffect(() => {
     // Listen for Firebase auth state changes
@@ -26,21 +52,40 @@ export default function DashboardPage() {
     router.replace("/auth/users/login");
   };
 
-  const [showModal, setShowModal] = useState(false);
-
   // Prefill with user data if available
-  const initialValues = user ? {
-    firstName: user.displayName?.split(' ')[0] || '',
-    lastName: user.displayName?.split(' ')[1] || '',
-    // Add more fields if you fetch them from DB
+  const initialValues = profile && user ? {
+    ...profile,
+    firstName: profile.firstName || user.displayName?.split(' ')[0] || '',
+    lastName: profile.lastName || user.displayName?.split(' ')[1] || '',
     email: user.email || '',
+    uid: user.uid,
+    displayName: user.displayName,
+    photoURL: user.photoURL,
+    phoneNumber: user.phoneNumber,
   } : {};
 
-  const handleModalSubmit = (data) => {
-    // TODO: Send data to backend or update profile
-    console.log('Submitted profile data:', data);
-    setShowModal(false);
+  const handleModalSubmit = async (data) => {
+    if (!user) return;
+    // Remove MongoDB fields from data before sending
+    const { _id, __v, createdAt, updatedAt, ...safeProfile } = data;
+    // Always include uid and email
+    const payload = { ...safeProfile, uid: user.uid, email: user.email, displayName: user.displayName, photoURL: user.photoURL, phoneNumber: user.phoneNumber };
+    console.log('Frontend: Submitting user profile payload:', payload);
+    const res = await fetch('/api/users', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    if (res.ok) {
+      // Re-fetch profile after update
+      const { user: updatedProfile } = await res.json();
+      setProfile(updatedProfile);
+      setShowModal(false);
+    } else {
+      alert('Failed to update profile');
+    }
   };
+
 
   return (
     <div className="min-h-screen flex flex-col items-center justify-center bg-gradient-to-br from-indigo-50 to-blue-100">

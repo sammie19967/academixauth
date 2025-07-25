@@ -1,11 +1,14 @@
+// models/User.js
 import mongoose from "mongoose";
+
 const UserSchema = new mongoose.Schema({
   uid: { type: String, required: true, unique: true },
   email: { type: String, required: true },
-  displayName: String,
-  phoneNumber: String,
-  photoURL: String,
-  // Modal fields
+  displayName: { type: String },
+  phoneNumber: { type: String },
+  photoURL: { type: String },
+
+  // Extended fields
   firstName: { type: String },
   lastName: { type: String },
   role: { type: String, enum: ["user", "admin"], default: "user" },
