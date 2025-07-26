@@ -19,6 +19,11 @@ const UserSchema = new mongoose.Schema({
   yearOfStudy: { type: String },
   semester: { type: String },
   unit: { type: String },
+  status: { 
+    type: String, 
+    enum: ["active", "inactive"], 
+    default: "inactive" 
+  },
   deleted: { type: Boolean, default: false },
 }, { timestamps: true });
 

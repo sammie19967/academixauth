@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { FiUser, FiLogOut } from "react-icons/fi";
 import { signOut, onUserStateChange } from "../../lib/authMethods";
 import Modal from "../../components/Modal";
+import Image from "next/image";
 
 export default function DashboardPage() {
   const router = useRouter();
@@ -166,9 +167,11 @@ export default function DashboardPage() {
       <div className="bg-white rounded-xl shadow-lg p-8 w-full max-w-md flex flex-col items-center">
         {/* Profile Picture */}
         {user?.photoURL ? (
-          <img 
+          <Image
             src={user.photoURL} 
             alt="Profile" 
+            width={64}
+            height={64}
             className="w-16 h-16 rounded-full mb-4 border-2 border-indigo-200"
           />
         ) : (

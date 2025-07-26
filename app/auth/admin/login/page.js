@@ -32,14 +32,21 @@ export default function AdminLoginPage() {
       const user = userCredential.user;
       if (!user) throw new Error("No user returned from Firebase.");
 
-      // 2. Upsert user in your database as admin
+      // 2. Get ID token for the authenticated user
+      const token = await user.getIdToken();
+      
+      // 3. Upsert user in your database as admin with active status
       const res = await fetch("/api/users", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { 
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${token}`
+        },
         body: JSON.stringify({
           uid: user.uid,
           email: user.email,
-          role: "admin"
+          role: "admin",
+          status: "active"
         })
       });
       
@@ -134,7 +141,7 @@ export default function AdminLoginPage() {
                 </div>
                 <div className="ml-3 text-sm">
                   <label htmlFor="human-check" className="font-medium text-gray-700">
-                    I'm not a robot
+                    I&apos;m not a robot
                   </label>
                 </div>
               </div>
