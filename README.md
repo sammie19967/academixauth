@@ -21,21 +21,22 @@ A modern authentication and user management system built with Next.js, Firebase,
 - **UI Components**: React Icons
 - **Form Handling**: React Hook Form
 - **State Management**: React Context API
+- **Role-based Access Control**: Firebase Custom Claims
 
 ## 📂 Project Structure
 
-```
+```text
 .
 ├── app/                    # Next.js app directory
 │   ├── api/                # API routes
 │   ├── auth/               # Authentication pages
 │   │   ├── admin/          # Admin dashboard
-│   │   └── login/          # Login pages
+│   │   └── users/          # User authentication
 │   └── dashboard/          # User dashboard
 ├── lib/                    # Utility functions
 ├── middleware/             # Authentication middleware
-├── models/                 # Database models
-└── public/                 # Static files
+├── models/                # Database models
+└── public/                # Static files
 ```
 
 ## 🚀 Getting Started
@@ -51,7 +52,7 @@ A modern authentication and user management system built with Next.js, Firebase,
 
 1. Clone the repository
    ```bash
-   git clone https://github.com/yourusername/academixauth.git
+   git clone https://github.com/sammie19967/academixauth.git
    cd academixauth
    ```
 
@@ -92,16 +93,34 @@ A modern authentication and user management system built with Next.js, Firebase,
 
 ## 🔒 Authentication Flows
 
-### User Registration
-1. Navigate to `/auth/register`
+### User Authentication
+
+#### User Registration
+
+1. Navigate to `/auth/users/signup`
 2. Fill in the registration form
 3. Verify email (if enabled)
 4. Redirect to dashboard
 
-### Admin Login
+#### User Login
+
+1. Navigate to `/auth/users/login`
+2. Enter your credentials
+3. Access user dashboard
+
+### Admin Authentication
+
+#### Admin Login
+
 1. Navigate to `/auth/admin/login`
 2. Enter admin credentials
 3. Access admin dashboard
+
+#### Admin Signup (if enabled)
+
+1. Navigate to `/auth/admin/signup`
+2. Fill in admin registration form
+3. Complete admin verification process
 
 ## 📚 API Endpoints
 
@@ -115,12 +134,14 @@ A modern authentication and user management system built with Next.js, Firebase,
 - `GET /api/users` - Get all users (Admin only)
 - `GET /api/users?uid={uid}` - Get user by ID
 - `POST /api/users` - Create new user
-- `PUT /api/users` - Update user
+- `PUT /api/users?uid={uid}` - Update user by ID 
 - `DELETE /api/users?uid={uid}` - Delete user (soft delete)
 
-### Admin
+### Admin 
 - `GET /api/users/verify-admin` - Verify admin status
 - `GET /api/users/all` - Get all users with details (Admin only)
+- `PUT /api/users?uid={uid}` - Update user by ID any user (Admin only)
+- `DELETE /api/users?uid={uid}` - Delete user (soft delete) any user (Admin only)
 
 ## 🛡️ Security
 
