@@ -46,10 +46,10 @@ export async function POST(req) {
       return NextResponse.json({ error: 'Missing required field: uid' }, { status: 400 });
     }
 
-    // For phone users, email might be auto-generated, so we'll be more flexible
+    // For phone users, generate a placeholder email if none provided
     if (!body.email) {
-      console.warn('[API] No email provided, this might be a phone user');
-      return NextResponse.json({ error: 'Missing required field: email' }, { status: 400 });
+      console.warn('[API] No email provided, generating placeholder for phone user');
+      body.email = `phone-${body.uid.replace(/[^a-zA-Z0-9]/g, '')}@phone-user.academix`;
     }
 
     // Clean the data - remove any undefined or null values
@@ -60,11 +60,11 @@ export async function POST(req) {
       return acc;
     }, {});
 
-    // Ensure uid and email are always present
-    if (!cleanData.uid || !cleanData.email) {
+    // Ensure uid is always present
+    if (!cleanData.uid) {
       return NextResponse.json({ 
-        error: 'Invalid data: uid and email are required',
-        received: { uid: !!cleanData.uid, email: !!cleanData.email }
+        error: 'Invalid data: uid is required',
+        received: { uid: false }
       }, { status: 400 });
     }
 
@@ -136,21 +136,20 @@ export async function POST(req) {
   }
 }
 
-// PUT /api/users - Alternative endpoint for updates only (no upsert)
+// PUT /api/users - Update user information
 export async function PUT(req) {
   await dbConnect();
-  // Admin-only: verify Firebase token
+  
+  // Verify Firebase token
   const authHeader = req.headers.get('authorization');
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
     return NextResponse.json({ error: 'Missing or invalid Authorization header' }, { status: 401 });
   }
+  
   const idToken = authHeader.replace('Bearer ', '');
   let decoded;
   try {
     decoded = await getAuth().verifyIdToken(idToken);
-    if (decoded.role !== 'admin') {
-      return NextResponse.json({ error: 'Forbidden: Admins only' }, { status: 403 });
-    }
   } catch (e) {
     return NextResponse.json({ error: 'Invalid or expired token' }, { status: 401 });
   }
@@ -172,8 +171,18 @@ export async function PUT(req) {
       }, { status: 404 });
     }
 
+    // Check if user is updating their own record or is an admin
+    if (decoded.uid !== body.uid && decoded.role !== 'admin') {
+      return NextResponse.json({ error: 'Forbidden: You can only update your own profile' }, { status: 403 });
+    }
+
     // Clean the data
     const cleanData = Object.entries(body).reduce((acc, [key, value]) => {
+      // Regular users can only update their status
+      if (decoded.role !== 'admin' && key !== 'status') {
+        return acc;
+      }
+      
       if (value !== null && value !== undefined && value !== '' && key !== 'uid') {
         acc[key] = typeof value === 'string' ? value.trim() : value;
       }

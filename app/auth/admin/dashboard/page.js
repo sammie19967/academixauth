@@ -28,12 +28,15 @@ export default function AdminDashboardPage() {
 
   // Fetch all users
   const fetchUsers = async () => {
+    if (!auth.currentUser) return;
+    
     setUsersLoading(true);
     setUserActionError("");
     try {
       const token = await auth.currentUser.getIdToken();
       const res = await fetch("/api/users/all", {
-        headers: { 'Authorization': `Bearer ${token}` }
+        headers: { 'Authorization': `Bearer ${token}` },
+        cache: 'no-store' // Prevent caching
       });
       const data = await res.json();
       if (Array.isArray(data.users)) {
@@ -42,10 +45,42 @@ export default function AdminDashboardPage() {
         setUserActionError("Failed to fetch users.");
       }
     } catch (err) {
-      setUserActionError("Error fetching users.");
+      console.error("Error fetching users:", err);
+      setUserActionError("Error fetching users. Will retry...");
     } finally {
       setUsersLoading(false);
     }
+  };
+
+  // Set up periodic data fetching
+  useEffect(() => {
+    if (!isAdmin) return;
+    
+    // Initial fetch
+    fetchUsers();
+    
+    // Set up interval for periodic refresh (every 30 seconds)
+    const refreshInterval = setInterval(fetchUsers, 30000);
+    
+    // Clean up interval on component unmount
+    return () => clearInterval(refreshInterval);
+  }, [isAdmin]); // Only re-run if isAdmin changes
+
+  // State for delete confirmation
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+  const [userToDelete, setUserToDelete] = useState(null);
+  const [isDeleting, setIsDeleting] = useState(false);
+
+  // Handle modal close to reset states
+  const handleModalClose = () => {
+    setShowCreateModal(false);
+    setShowEditModal(false);
+    setShowViewModal(false);
+    setSelectedUser(null);
+    setModalError("");
+    setModalSuccess("");
+    // Refresh data after modal actions
+    fetchUsers();
   };
 
   // Handlers
@@ -63,22 +98,42 @@ export default function AdminDashboardPage() {
     setModalSuccess("");
   };
 
-  const handleDelete = async user => {
-    if (!window.confirm(`Delete user ${user.email}?`)) return;
+  const handleDeleteClick = (user) => {
+    setUserToDelete(user);
+    setShowDeleteDialog(true);
+  };
+
+  const handleDeleteConfirm = async () => {
+    if (!userToDelete) return;
+    
+    setIsDeleting(true);
     try {
       const token = await auth.currentUser.getIdToken();
-      const res = await fetch(`/api/users?uid=${user.uid}`, {
+      const res = await fetch(`/api/users?uid=${userToDelete.uid}`, {
         method: "DELETE",
         headers: { 'Authorization': `Bearer ${token}` }
       });
+      
       if (res.ok) {
-        setUsers(users.filter(u => u.uid !== user.uid));
+        setUsers(users.filter(u => u.uid !== userToDelete.uid));
+        setModalSuccess(`User ${userToDelete.email} has been deleted.`);
+        setTimeout(() => setModalSuccess(""), 3000);
       } else {
-        setUserActionError("Failed to delete user.");
+        const errorData = await res.json();
+        setUserActionError(errorData.error || "Failed to delete user.");
       }
     } catch (err) {
-      setUserActionError("Error deleting user.");
+      setUserActionError("Error deleting user. Please try again.");
+    } finally {
+      setIsDeleting(false);
+      setShowDeleteDialog(false);
+      setUserToDelete(null);
     }
+  };
+
+  const handleDeleteCancel = () => {
+    setShowDeleteDialog(false);
+    setUserToDelete(null);
   };
 
   const handleLogout = async () => {
@@ -114,28 +169,58 @@ export default function AdminDashboardPage() {
         router.replace("/auth/admin/login");
         return;
       }
+      
       try {
-        const tokenResult = await user.getIdTokenResult(true);
-        if (tokenResult.claims.role === "admin") {
-          setIsAdmin(true);
-          setProfileLoading(true);
-          const res = await fetch(`/api/users?uid=${user.uid}`);
-          const data = await res.json();
-          if (data.user) {
-            setAdminName(data.user.displayName || `${data.user.firstName || ""} ${data.user.lastName || ""}`.trim());
-          }
-          fetchUsers();
-        } else {
-          router.replace("/auth/admin/login");
+        const token = await user.getIdToken(true); // Force token refresh
+        const res = await fetch('/api/users/verify-admin', {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        
+        if (!res.ok) {
+          throw new Error('Not authorized');
         }
-      } catch (err) {
-        router.replace("/auth/admin/login");
+        
+        const data = await res.json();
+        if (data.isAdmin) {
+          setIsAdmin(true);
+          // Fetch admin details from database
+          try {
+            const userRes = await fetch(`/api/users?uid=${user.uid}`);
+            if (userRes.ok) {
+              const userData = await userRes.json();
+              // Use the name from the database if available, otherwise fall back to displayName or email
+              const nameToUse = userData.user?.firstName || 
+                               userData.user?.displayName || 
+                               user.email?.split('@')[0] || 
+                               'Admin';
+              setAdminName(nameToUse);
+            }
+          } catch (err) {
+            console.error('Error fetching admin details:', err);
+            setAdminName(user.displayName || user.email?.split('@')[0] || 'Admin');
+          }
+          fetchUsers(); // Initial fetch
+        } else {
+          router.replace('/dashboard');
+        }
+      } catch (error) {
+        console.error('Admin verification failed:', error);
+        router.replace('/auth/admin/login');
       } finally {
         setLoading(false);
         setProfileLoading(false);
       }
     };
-    checkAdmin();
+
+    const unsubscribe = auth.onAuthStateChanged((user) => {
+      if (user) {
+        checkAdmin();
+      } else {
+        router.replace('/auth/admin/login');
+      }
+    });
+
+    return () => unsubscribe();
   }, [router]);
 
   // Modal handlers
@@ -197,25 +282,98 @@ export default function AdminDashboardPage() {
     }
   };
 
+  // Delete Confirmation Dialog Component
+  const DeleteConfirmationDialog = ({ isOpen, onConfirm, onCancel, user, loading }) => {
+    if (!isOpen) return null;
+
+    return (
+      <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+        <div className="bg-white rounded-xl shadow-xl w-full max-w-md overflow-hidden">
+          <div className="p-6">
+            <div className="flex items-center mb-4">
+              <div className="p-2 bg-red-100 rounded-full mr-3">
+                <FiAlertCircle className="text-red-600 text-xl" />
+              </div>
+              <h3 className="text-lg font-semibold text-gray-900">Confirm Deletion</h3>
+            </div>
+            
+            <p className="text-gray-600 mb-6">
+              Are you sure you want to delete <span className="font-semibold">{user?.email}</span>? 
+              This action cannot be undone.
+            </p>
+            
+            <div className="flex justify-end space-x-3">
+              <button
+                type="button"
+                onClick={onCancel}
+                disabled={loading}
+                className="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={onConfirm}
+                disabled={loading}
+                className="px-4 py-2 border border-transparent rounded-lg shadow-sm text-white bg-red-600 hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 disabled:opacity-50 flex items-center"
+              >
+                {loading ? (
+                  <>
+                    <FiLoader className="animate-spin mr-2 h-4 w-4" />
+                    Deleting...
+                  </>
+                ) : (
+                  'Delete'
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   // User Modal Component
   const UserModal = ({ mode, user, onClose, onSubmit, loading, error, success }) => {
     const [form, setForm] = useState(user || { 
       uid: '', 
       email: '', 
+      displayName: '',
+      phoneNumber: '',
+      photoURL: '',
       firstName: '', 
       lastName: '', 
       role: 'user', 
-      status: 'active' 
+      university: '',
+      college: '',
+      department: '',
+      course: '',
+      yearOfStudy: '',
+      semester: '',
+      unit: '',
+      status: 'active',
+      deleted: false
     });
 
     useEffect(() => { 
       setForm(user || { 
         uid: '', 
         email: '', 
+        displayName: '',
+        phoneNumber: '',
+        photoURL: '',
         firstName: '', 
         lastName: '', 
         role: 'user', 
-        status: 'active' 
+        university: '',
+        college: '',
+        department: '',
+        course: '',
+        yearOfStudy: '',
+        semester: '',
+        unit: '',
+        status: 'active',
+        deleted: false
       }); 
     }, [user]);
 
@@ -269,7 +427,7 @@ export default function AdminDashboardPage() {
                   />
                 </div>
 
-                {/* Name Fields */}
+                {/* Personal Information */}
                 <div className="grid grid-cols-2 gap-4">
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">First Name</label>
@@ -293,6 +451,118 @@ export default function AdminDashboardPage() {
                   </div>
                 </div>
 
+                {/* Contact Information */}
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Phone Number</label>
+                    <input
+                      name="phoneNumber"
+                      type="tel"
+                      value={form.phoneNumber || ''}
+                      onChange={handleChange}
+                      disabled={isView}
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 disabled:bg-gray-100 text-gray-900"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Photo URL</label>
+                    <input
+                      name="photoURL"
+                      type="url"
+                      value={form.photoURL || ''}
+                      onChange={handleChange}
+                      disabled={isView}
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 disabled:bg-gray-100 text-gray-900"
+                    />
+                  </div>
+                </div>
+
+                {/* Academic Information */}
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">University</label>
+                    <input
+                      name="university"
+                      value={form.university || ''}
+                      onChange={handleChange}
+                      disabled={isView}
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 disabled:bg-gray-100 text-gray-900"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">College</label>
+                    <input
+                      name="college"
+                      value={form.college || ''}
+                      onChange={handleChange}
+                      disabled={isView}
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 disabled:bg-gray-100 text-gray-900"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Department</label>
+                    <input
+                      name="department"
+                      value={form.department || ''}
+                      onChange={handleChange}
+                      disabled={isView}
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 disabled:bg-gray-100 text-gray-900"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Course</label>
+                    <input
+                      name="course"
+                      value={form.course || ''}
+                      onChange={handleChange}
+                      disabled={isView}
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 disabled:bg-gray-100 text-gray-900"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-3 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Year of Study</label>
+                    <input
+                      name="yearOfStudy"
+                      type="number"
+                      min="1"
+                      max="6"
+                      value={form.yearOfStudy || ''}
+                      onChange={handleChange}
+                      disabled={isView}
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 disabled:bg-gray-100 text-gray-900"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Semester</label>
+                    <input
+                      name="semester"
+                      type="number"
+                      min="1"
+                      max="2"
+                      value={form.semester || ''}
+                      onChange={handleChange}
+                      disabled={isView}
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 disabled:bg-gray-100 text-gray-900"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Unit</label>
+                    <input
+                      name="unit"
+                      value={form.unit || ''}
+                      onChange={handleChange}
+                      disabled={isView}
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 disabled:bg-gray-100 text-gray-900"
+                    />
+                  </div>
+                </div>
+
                 {/* Role Field */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Role</label>
@@ -308,19 +578,37 @@ export default function AdminDashboardPage() {
                   </select>
                 </div>
 
-                {/* Status Field */}
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Status</label>
-                  <select
-                    name="status"
-                    value={form.status}
-                    onChange={handleChange}
-                    disabled={isView}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 disabled:bg-gray-100 text-gray-900"
-                  >
-                    <option value="active">Active</option>
-                    <option value="inactive">Inactive</option>
-                  </select>
+                {/* Account Settings */}
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Status</label>
+                    <select
+                      name="status"
+                      value={form.status}
+                      onChange={handleChange}
+                      disabled={isView}
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 disabled:bg-gray-100 text-gray-900"
+                    >
+                      <option value="active">Active</option>
+                      <option value="inactive">Inactive</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Account Status</label>
+                    <div className="mt-1">
+                      <label className="inline-flex items-center">
+                        <input
+                          type="checkbox"
+                          name="deleted"
+                          checked={form.deleted || false}
+                          onChange={(e) => setForm({...form, deleted: e.target.checked})}
+                          disabled={isView}
+                          className="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded"
+                        />
+                        <span className="ml-2 text-sm text-gray-700">Mark as Deleted</span>
+                      </label>
+                    </div>
+                  </div>
                 </div>
               </div>
 
@@ -540,27 +828,32 @@ export default function AdminDashboardPage() {
                           </span>
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                          <div className="flex justify-end space-x-2">
+                          <div className="flex items-center space-x-2">
                             <button
                               onClick={() => handleView(user)}
-                              className="text-indigo-600 hover:text-indigo-900 p-2 rounded-full hover:bg-indigo-50 transition-colors"
+                              className="p-2 text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors"
                               title="View"
                             >
-                              <FiEye />
+                              <FiEye className="h-4 w-4" />
                             </button>
                             <button
                               onClick={() => handleEdit(user)}
-                              className="text-amber-600 hover:text-amber-900 p-2 rounded-full hover:bg-amber-50 transition-colors"
+                              className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
                               title="Edit"
                             >
-                              <FiEdit2 />
+                              <FiEdit2 className="h-4 w-4" />
                             </button>
                             <button
-                              onClick={() => handleDelete(user)}
-                              className="text-red-600 hover:text-red-900 p-2 rounded-full hover:bg-red-50 transition-colors"
+                              onClick={() => handleDeleteClick(user)}
+                              className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
                               title="Delete"
+                              disabled={isDeleting}
                             >
-                              <FiTrash2 />
+                              {isDeleting && userToDelete?.uid === user.uid ? (
+                                <FiLoader className="h-4 w-4 animate-spin" />
+                              ) : (
+                                <FiTrash2 className="h-4 w-4" />
+                              )}
                             </button>
                           </div>
                         </td>
@@ -627,6 +920,15 @@ export default function AdminDashboardPage() {
           success=""
         />
       )}
+
+      {/* Delete Confirmation Dialog */}
+      <DeleteConfirmationDialog
+        isOpen={showDeleteDialog}
+        user={userToDelete}
+        onConfirm={handleDeleteConfirm}
+        onCancel={handleDeleteCancel}
+        loading={isDeleting}
+      />
     </div>
   );
 }

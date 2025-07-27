@@ -1,7 +1,10 @@
 {
   "compilerOptions": {
+    "baseUrl": ".",
     "paths": {
-      "@/*": ["./*"]
+      "@/*": ["./*"],
+      "@/middleware/*": ["./middleware/*"]
     }
-  }
+  },
+  "exclude": ["node_modules"]
 }
